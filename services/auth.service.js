@@ -43,16 +43,49 @@ class AuthService {
 
   async refreshToken(refreshToken) {
     if (!refreshToken) {
-      throw new Error('Missing refresh token');
+      const error = new Error('Missing refresh token');
+      error.statusCode = 400;
+      throw error;
     }
     if (!process.env.JWT_REFRESH_SECRET) {
-      throw new Error('JWT refresh secret is not configured');
+      const error = new Error('JWT refresh secret is not configured');
+      error.statusCode = 500;
+      throw error;
     }
-    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    
+    let payload;
+    try {
+      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    } catch (err) {
+      // Handle different JWT error types
+      if (err.name === 'TokenExpiredError') {
+        const error = new Error('Refresh token has expired');
+        error.statusCode = 401;
+        throw error;
+      } else if (err.name === 'JsonWebTokenError') {
+        const error = new Error('Invalid refresh token');
+        error.statusCode = 401;
+        throw error;
+      } else {
+        const error = new Error('Token verification failed');
+        error.statusCode = 401;
+        throw error;
+      }
+    }
+    
+    if (!payload || !payload.sub) {
+      const error = new Error('Invalid token payload');
+      error.statusCode = 401;
+      throw error;
+    }
+    
     const user = await User.findById(payload.sub);
     if (!user) {
-      throw new Error('Invalid token');
+      const error = new Error('User not found');
+      error.statusCode = 401;
+      throw error;
     }
+    
     return this.signTokens(user);
   }
 }

@@ -5,8 +5,8 @@ exports.createOrderFromCart = async (req, res, next) => {
     const order = await orderService.createOrderFromCart(req.user.sub);
     res.status(201).json(order);
   } catch (err) {
-    if (err.message === 'Cart is empty') {
-      return res.status(400).json({ message: err.message });
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
     }
     next(err);
   }

@@ -14,6 +14,10 @@ const loginSchema = Joi.object({
   password: Joi.string().min(6).required()
 });
 
+const refreshSchema = Joi.object({
+  token: Joi.string().required()
+});
+
 router.post('/register', (req, res, next) => {
   const { error } = registerSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.message });
@@ -26,7 +30,11 @@ router.post('/login', (req, res, next) => {
   return login(req, res, next);
 });
 
-router.post('/refresh', refresh);
+router.post('/refresh', (req, res, next) => {
+  const { error } = refreshSchema.validate(req.body);
+  if (error) return res.status(400).json({ message: error.message });
+  return refresh(req, res, next);
+});
 
 module.exports = router;
 

@@ -7,7 +7,7 @@ function notFound(req, res, next) {
 }
 
 function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-vars
-  const statusCode = res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;
+  const statusCode = err.statusCode || (res.statusCode && res.statusCode !== 200 ? res.statusCode : 500);
   res.status(statusCode);
 
   const response = {

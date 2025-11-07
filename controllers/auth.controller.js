@@ -37,8 +37,8 @@ exports.refresh = async (req, res, next) => {
     const tokens = await authService.refreshToken(token);
     res.json(tokens);
   } catch (err) {
-    if (err.message === 'Missing refresh token' || err.message === 'Invalid token') {
-      return res.status(err.message === 'Missing refresh token' ? 400 : 401).json({ message: err.message });
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
     }
     next(err);
   }
