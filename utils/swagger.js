@@ -44,11 +44,11 @@ const options = {
             role: { type: 'string', enum: ['Admin', 'Editor', 'Viewer'], example: 'Viewer' }
           }
         },
-        RefreshTokenRequest: {
+        RefreshTokenNote: {
           type: 'object',
-          required: ['token'],
+          description: 'The refresh token is issued in an HTTP-only cookie named `refreshToken`.',
           properties: {
-            token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }
+            message: { type: 'string', example: 'Refresh token is stored in HTTP-only cookie.' }
           }
         },
         AuthResponse: {
@@ -63,8 +63,7 @@ const options = {
                 role: { type: 'string', example: 'Viewer' }
               }
             },
-            accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
-            refreshToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }
+            accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }
           }
         },
         Product: {
@@ -234,7 +233,7 @@ const options = {
         post: {
           tags: ['Auth'],
           summary: 'Register a new user',
-          description: 'Create a new user account. Returns JWT tokens for authentication.',
+          description: 'Create a new user account. Returns an access token in the response body and sets the refresh token in an HTTP-only cookie.',
           requestBody: {
             required: true,
             content: {
@@ -250,6 +249,12 @@ const options = {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/AuthResponse' }
                 }
+              },
+              headers: {
+                'Set-Cookie': {
+                  description: 'Contains the HTTP-only `refreshToken` cookie used for rotation.',
+                  schema: { type: 'string' }
+                }
               }
             },
             '400': { description: 'Validation error', schema: { $ref: '#/components/schemas/Error' } },
@@ -261,7 +266,7 @@ const options = {
         post: {
           tags: ['Auth'],
           summary: 'Login and get JWT tokens',
-          description: 'Authenticate user and receive access token and refresh token.',
+          description: 'Authenticate user and receive an access token in the body. Refresh token is issued in an HTTP-only cookie.',
           requestBody: {
             required: true,
             content: {
@@ -277,6 +282,12 @@ const options = {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/AuthResponse' }
                 }
+              },
+              headers: {
+                'Set-Cookie': {
+                  description: 'Contains the HTTP-only `refreshToken` cookie used for rotation.',
+                  schema: { type: 'string' }
+                }
               }
             },
             '400': { description: 'Validation error', schema: { $ref: '#/components/schemas/Error' } },
@@ -288,15 +299,7 @@ const options = {
         post: {
           tags: ['Auth'],
           summary: 'Refresh access token',
-          description: 'Get new access token using refresh token.',
-          requestBody: {
-            required: true,
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/RefreshTokenRequest' }
-              }
-            }
-          },
+          description: 'Get new access token using the refresh token stored in an HTTP-only cookie.',
           responses: {
             '200': {
               description: 'Tokens refreshed',
@@ -305,15 +308,29 @@ const options = {
                   schema: {
                     type: 'object',
                     properties: {
-                      accessToken: { type: 'string' },
-                      refreshToken: { type: 'string' }
+                      accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }
                     }
                   }
                 }
+              },
+              headers: {
+                'Set-Cookie': {
+                  description: 'Contains the rotated HTTP-only `refreshToken` cookie.',
+                  schema: { type: 'string' }
+                }
               }
             },
-            '400': { description: 'Missing refresh token', schema: { $ref: '#/components/schemas/Error' } },
             '401': { description: 'Invalid token', schema: { $ref: '#/components/schemas/Error' } }
+          }
+        }
+      },
+      '/auth/logout': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Log out current session',
+          description: 'Revokes the current refresh token and clears the HTTP-only cookie.',
+          responses: {
+            '204': { description: 'Logged out successfully. Refresh cookie cleared.' }
           }
         }
       },

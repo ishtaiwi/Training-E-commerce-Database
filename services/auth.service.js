@@ -1,18 +1,63 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const RefreshToken = require('../models/RefreshToken');
+
+const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS || '7', 10);
+
+function requireJwtSecrets() {
+  if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+    throw new Error('JWT secrets are not configured');
+  }
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function calculateRefreshExpiry() {
+  return new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+}
 
 class AuthService {
-  signTokens(user) {
-    if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-      throw new Error('JWT secrets are not configured');
-    }
-    const payload = { sub: user._id, email: user.email, role: user.role };
-    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
-    const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+  constructor() {
+    requireJwtSecrets();
+  }
+
+  buildPayload(user) {
+    return { sub: user._id, email: user.email, role: user.role };
+  }
+
+  generateAccessToken(user) {
+    const payload = this.buildPayload(user);
+    return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
+  }
+
+  async generateRefreshToken(user, context = {}) {
+    const payload = this.buildPayload(user);
+    const token = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, { expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d` });
+    const tokenHash = hashToken(token);
+    const expiresAt = calculateRefreshExpiry();
+
+    await RefreshToken.create({
+      user: user._id,
+      tokenHash,
+      expiresAt,
+      createdByIp: context.ip,
+      userAgent: context.userAgent
+    });
+
+    return token;
+  }
+
+  async issueTokens(user, context) {
+    const accessToken = this.generateAccessToken(user);
+    const refreshToken = await this.generateRefreshToken(user, context);
     return { accessToken, refreshToken };
   }
 
-  async register(userData) {
+  async register(userData, context) {
     const existing = await User.findOne({ email: userData.email });
     if (existing) {
       throw new Error('Email already registered');
@@ -24,11 +69,11 @@ class AuthService {
       passwordHash,
       role: userData.role
     });
-    const tokens = this.signTokens(user);
+    const tokens = await this.issueTokens(user, context);
     return { user, tokens };
   }
 
-  async login(email, password) {
+  async login(email, password, context) {
     const user = await User.findOne({ email });
     if (!user) {
       throw new Error('Invalid credentials');
@@ -37,56 +82,81 @@ class AuthService {
     if (!isValid) {
       throw new Error('Invalid credentials');
     }
-    const tokens = this.signTokens(user);
+    const tokens = await this.issueTokens(user, context);
     return { user, tokens };
   }
 
-  async refreshToken(refreshToken) {
+  async refreshToken(refreshToken, context = {}) {
     if (!refreshToken) {
       const error = new Error('Missing refresh token');
       error.statusCode = 400;
       throw error;
     }
-    if (!process.env.JWT_REFRESH_SECRET) {
-      const error = new Error('JWT refresh secret is not configured');
-      error.statusCode = 500;
-      throw error;
-    }
-    
+
     let payload;
     try {
       payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     } catch (err) {
-      // Handle different JWT error types
-      if (err.name === 'TokenExpiredError') {
-        const error = new Error('Refresh token has expired');
-        error.statusCode = 401;
-        throw error;
-      } else if (err.name === 'JsonWebTokenError') {
-        const error = new Error('Invalid refresh token');
-        error.statusCode = 401;
-        throw error;
-      } else {
-        const error = new Error('Token verification failed');
-        error.statusCode = 401;
-        throw error;
-      }
+      const error = new Error(err.name === 'TokenExpiredError' ? 'Refresh token has expired' : 'Invalid refresh token');
+      error.statusCode = 401;
+      throw error;
     }
-    
+
     if (!payload || !payload.sub) {
       const error = new Error('Invalid token payload');
       error.statusCode = 401;
       throw error;
     }
-    
+
+    const tokenHash = hashToken(refreshToken);
+    const storedToken = await RefreshToken.findOne({ tokenHash });
+
+    if (!storedToken) {
+      const error = new Error('Refresh token not recognized');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    if (storedToken.revokedAt) {
+      const error = new Error('Refresh token already rotated');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    if (storedToken.isExpired()) {
+      const error = new Error('Refresh token has expired');
+      error.statusCode = 401;
+      throw error;
+    }
+
     const user = await User.findById(payload.sub);
     if (!user) {
       const error = new Error('User not found');
       error.statusCode = 401;
       throw error;
     }
-    
-    return this.signTokens(user);
+
+    const tokens = await this.issueTokens(user, context);
+    storedToken.revokedAt = new Date();
+    storedToken.revokedByIp = context.ip;
+    storedToken.replacedByTokenHash = hashToken(tokens.refreshToken);
+    await storedToken.save();
+
+    return tokens;
+  }
+
+  async revokeRefreshToken(refreshToken, context = {}) {
+    if (!refreshToken) {
+      return;
+    }
+    const tokenHash = hashToken(refreshToken);
+    const storedToken = await RefreshToken.findOne({ tokenHash });
+    if (!storedToken) {
+      return;
+    }
+    storedToken.revokedAt = new Date();
+    storedToken.revokedByIp = context.ip;
+    await storedToken.save();
   }
 }
 

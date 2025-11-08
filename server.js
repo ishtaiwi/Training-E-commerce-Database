@@ -11,7 +11,6 @@ const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
-const session = require('express-session');
 const mongoSanitize = require('express-mongo-sanitize');
 const xssClean = require('xss-clean');
 
@@ -23,8 +22,8 @@ const app = express();
 app.use(helmet());
 
 // Validate required environment variables
-if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET || !process.env.SESSION_SECRET) {
-  logger.error('Missing required environment variables: JWT_SECRET, JWT_REFRESH_SECRET, or SESSION_SECRET');
+if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+  logger.error('Missing required environment variables: JWT_SECRET or JWT_REFRESH_SECRET');
   process.exit(1);
 }
 
@@ -35,14 +34,8 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Cookies & optional session (for session-based login if needed)
+// Cookies (for reading signed cookies if needed)
 app.use(cookieParser());
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' }
-}));
 
 // Sanitization
 app.use(mongoSanitize());

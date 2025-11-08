@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const Joi = require('joi');
-const { register, login, refresh } = require('../controllers/auth.controller');
+const { register, login, refresh, logout } = require('../controllers/auth.controller');
 
 const registerSchema = Joi.object({
   name: Joi.string().min(2).required(),
@@ -12,10 +12,6 @@ const registerSchema = Joi.object({
 const loginSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required()
-});
-
-const refreshSchema = Joi.object({
-  token: Joi.string().required()
 });
 
 router.post('/register', (req, res, next) => {
@@ -30,11 +26,9 @@ router.post('/login', (req, res, next) => {
   return login(req, res, next);
 });
 
-router.post('/refresh', (req, res, next) => {
-  const { error } = refreshSchema.validate(req.body);
-  if (error) return res.status(400).json({ message: error.message });
-  return refresh(req, res, next);
-});
+router.post('/refresh', refresh);
+
+router.post('/logout', logout);
 
 module.exports = router;
 
