@@ -3,6 +3,14 @@ const Cart = require('../models/Cart');
 const productService = require('./product.service');
 
 class OrderService {
+  async getOrderById(orderId) {
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+    return order;
+  }
+
   async createOrderFromCart(userId) {
     const cart = await Cart.findOne({ user: userId }).populate('items.product');
     if (!cart || !cart.items || cart.items.length === 0) {
