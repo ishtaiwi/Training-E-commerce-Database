@@ -3,12 +3,17 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
 
-const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
-const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS || '7', 10);
+const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_EXPIRES_IN;
+const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 10);
 
 function requireJwtSecrets() {
-  if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-    throw new Error('JWT secrets are not configured');
+  const missing = [];
+  if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
+  if (!process.env.JWT_REFRESH_SECRET) missing.push('JWT_REFRESH_SECRET');
+  if (!ACCESS_TOKEN_TTL) missing.push('JWT_ACCESS_EXPIRES_IN');
+  if (!Number.isInteger(REFRESH_TOKEN_TTL_DAYS)) missing.push('JWT_REFRESH_EXPIRES_IN_DAYS');
+  if (missing.length) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 }
 
@@ -157,6 +162,53 @@ class AuthService {
     storedToken.revokedAt = new Date();
     storedToken.revokedByIp = context.ip;
     await storedToken.save();
+  }
+
+  async findOrCreateGoogleUser(profile) {
+    const googleId = profile.id;
+    const primaryEmail = Array.isArray(profile.emails) && profile.emails.length > 0
+      ? profile.emails[0].value
+      : null;
+
+    let user = await User.findOne({ provider: 'google', providerId: googleId });
+    if (!user && primaryEmail) {
+      user = await User.findOne({ email: primaryEmail });
+    }
+
+    if (user) {
+      let requiresSave = false;
+      if (user.provider !== 'google') {
+        user.provider = 'google';
+        requiresSave = true;
+      }
+      if (!user.providerId) {
+        user.providerId = googleId;
+        requiresSave = true;
+      }
+      if (requiresSave) {
+        await user.save();
+      }
+      return user;
+    }
+
+    const randomPassword = crypto.randomBytes(32).toString('hex');
+    const passwordHash = await User.hashPassword(randomPassword);
+    const displayName = profile.displayName || primaryEmail || `google_user_${googleId}`;
+
+    return User.create({
+      name: displayName,
+      email: primaryEmail,
+      passwordHash,
+      role: 'Viewer',
+      provider: 'google',
+      providerId: googleId
+    });
+  }
+
+  async loginWithGoogle(profile, context = {}) {
+    const user = await this.findOrCreateGoogleUser(profile);
+    const tokens = await this.issueTokens(user, context);
+    return { user, tokens };
   }
 }
 

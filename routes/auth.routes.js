@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const Joi = require('joi');
-const { register, login, refresh, logout } = require('../controllers/auth.controller');
+const passport = require('passport');
+const { register, login, refresh, logout, googleCallback, googleFailure } = require('../controllers/auth.controller');
 
 const registerSchema = Joi.object({
   name: Joi.string().min(2).required(),
@@ -29,6 +30,22 @@ router.post('/login', (req, res, next) => {
 router.post('/refresh', refresh);
 
 router.post('/logout', logout);
+
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email'],
+  prompt: 'select_account'
+}));
+
+router.get('/google/callback', (req, res, next) => {
+  passport.authenticate('google', { session: false }, (err, user) => {
+    if (err) return next(err);
+    if (!user) return googleFailure(req, res);
+    req.user = user;
+    return googleCallback(req, res, next);
+  })(req, res, next);
+});
+
+router.get('/google/failure', googleFailure);
 
 module.exports = router;
 

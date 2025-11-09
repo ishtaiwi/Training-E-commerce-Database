@@ -1,7 +1,13 @@
 const authService = require('../services/auth.service');
 
 const REFRESH_COOKIE_NAME = 'refreshToken';
-const REFRESH_COOKIE_MAX_AGE = parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS || '7', 10) * 24 * 60 * 60 * 1000;
+const REFRESH_TTL_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 10);
+
+if (!Number.isInteger(REFRESH_TTL_DAYS)) {
+  throw new Error('JWT_REFRESH_EXPIRES_IN_DAYS environment variable must be defined with an integer value');
+}
+
+const REFRESH_COOKIE_MAX_AGE = REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000;
 
 function buildContext(req) {
   return {
@@ -89,4 +95,30 @@ exports.logout = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+exports.googleCallback = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Google authentication failed' });
+    }
+    const context = buildContext(req);
+    const tokens = await authService.issueTokens(req.user, context);
+    setRefreshTokenCookie(res, tokens.refreshToken);
+    res.json({
+      user: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role
+      },
+      accessToken: tokens.accessToken
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.googleFailure = (req, res) => {
+  res.status(401).json({ message: 'Google authentication failed' });
 };

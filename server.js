@@ -13,19 +13,27 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
 const xssClean = require('xss-clean');
+const passport = require('passport');
 
 const { logger } = require('./utils/logger');
+
+// Validate required environment variables
+if (
+  !process.env.JWT_SECRET ||
+  !process.env.JWT_REFRESH_SECRET ||
+  !process.env.JWT_ACCESS_EXPIRES_IN ||
+  !process.env.JWT_REFRESH_EXPIRES_IN_DAYS
+) {
+  logger.error('Missing required environment variables: JWT_SECRET, JWT_REFRESH_SECRET, JWT_ACCESS_EXPIRES_IN, or JWT_REFRESH_EXPIRES_IN_DAYS');
+  process.exit(1);
+}
+
+require('./config/passport')(passport);
 
 const app = express();
 
 // Security headers
 app.use(helmet());
-
-// Validate required environment variables
-if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-  logger.error('Missing required environment variables: JWT_SECRET or JWT_REFRESH_SECRET');
-  process.exit(1);
-}
 
 // CORS
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
@@ -36,6 +44,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Cookies (for reading signed cookies if needed)
 app.use(cookieParser());
+app.use(passport.initialize());
 
 // Sanitization
 app.use(mongoSanitize());
