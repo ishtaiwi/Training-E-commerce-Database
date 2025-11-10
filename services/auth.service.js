@@ -2,9 +2,14 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
+const emailService = require('./email.service');
 
 const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_EXPIRES_IN;
 const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 10);
+const EMAIL_VERIFICATION_TOKEN_TTL_MINUTES = parseInt(process.env.EMAIL_VERIFICATION_TOKEN_TTL || '60', 10);
+const PASSWORD_RESET_TOKEN_TTL_MINUTES = parseInt(process.env.PASSWORD_RESET_TOKEN_TTL || '30', 10);
+const EMAIL_VERIFICATION_URL = process.env.EMAIL_VERIFICATION_URL;
+const PASSWORD_RESET_URL = process.env.PASSWORD_RESET_URL;
 
 function requireJwtSecrets() {
   const missing = [];
@@ -23,6 +28,21 @@ function hashToken(token) {
 
 function calculateRefreshExpiry() {
   return new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function calculateExpiryMinutes(minutes) {
+  return new Date(Date.now() + minutes * 60 * 1000);
+}
+
+function buildActionUrl(base, token) {
+  if (!base) return null;
+  try {
+    const url = new URL(base);
+    url.searchParams.set('token', token);
+    return url.toString();
+  } catch (err) {
+    return `${base}${base.includes('?') ? '&' : '?'}token=${token}`;
+  }
 }
 
 class AuthService {
@@ -48,6 +68,7 @@ class AuthService {
     await RefreshToken.create({
       user: user._id,
       tokenHash,
+      type: 'refresh',
       expiresAt,
       createdByIp: context.ip,
       userAgent: context.userAgent
@@ -74,8 +95,8 @@ class AuthService {
       passwordHash,
       role: userData.role
     });
-    const tokens = await this.issueTokens(user, context);
-    return { user, tokens };
+    const verification = await this.triggerEmailVerification(user, context);
+    return { user, verification };
   }
 
   async login(email, password, context) {
@@ -86,6 +107,12 @@ class AuthService {
     const isValid = await user.validatePassword(password);
     if (!isValid) {
       throw new Error('Invalid credentials');
+    }
+    if (user.provider === 'local' && !user.emailVerified) {
+      await this.triggerEmailVerification(user, context);
+      const error = new Error('Email not verified. Verification email sent.');
+      error.statusCode = 403;
+      throw error;
     }
     const tokens = await this.issueTokens(user, context);
     return { user, tokens };
@@ -114,7 +141,7 @@ class AuthService {
     }
 
     const tokenHash = hashToken(refreshToken);
-    const storedToken = await RefreshToken.findOne({ tokenHash });
+    const storedToken = await RefreshToken.findOne({ tokenHash, type: 'refresh' });
 
     if (!storedToken) {
       const error = new Error('Refresh token not recognized');
@@ -155,7 +182,7 @@ class AuthService {
       return;
     }
     const tokenHash = hashToken(refreshToken);
-    const storedToken = await RefreshToken.findOne({ tokenHash });
+    const storedToken = await RefreshToken.findOne({ tokenHash, type: 'refresh' });
     if (!storedToken) {
       return;
     }
@@ -207,8 +234,143 @@ class AuthService {
 
   async loginWithGoogle(profile, context = {}) {
     const user = await this.findOrCreateGoogleUser(profile);
+    if (!user.emailVerified) {
+      user.emailVerified = true;
+      user.verifiedAt = new Date();
+      await user.save();
+    }
     const tokens = await this.issueTokens(user, context);
     return { user, tokens };
+  }
+
+  async createActionToken(user, type, ttlMinutes, context = {}, metadata = {}) {
+    const token = crypto.randomBytes(48).toString('hex');
+    const tokenHash = hashToken(token);
+    const expiresAt = calculateExpiryMinutes(ttlMinutes);
+
+    await RefreshToken.create({
+      user: user._id,
+      tokenHash,
+      type,
+      expiresAt,
+      createdByIp: context.ip,
+      userAgent: context.userAgent,
+      metadata
+    });
+
+    return token;
+  }
+
+  async triggerEmailVerification(user, context = {}) {
+    if (user.emailVerified || user.provider !== 'local') {
+      return { emailSent: false, alreadyVerified: true };
+    }
+
+    const token = await this.createActionToken(
+      user,
+      'email_verification',
+      EMAIL_VERIFICATION_TOKEN_TTL_MINUTES,
+      context
+    );
+
+    const verifyUrl = buildActionUrl(EMAIL_VERIFICATION_URL, token);
+
+    if (emailService.isEnabled()) {
+      await emailService.sendEmailVerification(user.email, { verifyUrl, token });
+      return { emailSent: true, token, verifyUrl };
+    }
+
+    return { emailSent: false, token, verifyUrl };
+  }
+
+  async resendVerificationEmail(email, context = {}) {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return { emailSent: emailService.isEnabled() };
+    }
+    return this.triggerEmailVerification(user, context);
+  }
+
+  async verifyEmailToken(token, context = {}) {
+    const tokenHash = hashToken(token);
+    const storedToken = await RefreshToken.findOne({ tokenHash, type: 'email_verification' });
+    if (!storedToken || !storedToken.isActive()) {
+      const error = new Error('Invalid or expired verification token');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await User.findById(storedToken.user);
+    if (!user) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    user.emailVerified = true;
+    user.verifiedAt = new Date();
+    await user.save();
+
+    storedToken.consumedAt = new Date();
+    storedToken.revokedByIp = context.ip;
+    await storedToken.save();
+
+    return user;
+  }
+
+  async requestPasswordReset(email, context = {}) {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return { emailSent: emailService.isEnabled() };
+    }
+
+    const token = await this.createActionToken(
+      user,
+      'password_reset',
+      PASSWORD_RESET_TOKEN_TTL_MINUTES,
+      context
+    );
+
+    const resetUrl = buildActionUrl(PASSWORD_RESET_URL, token);
+
+    if (emailService.isEnabled()) {
+      await emailService.sendPasswordReset(user.email, { resetUrl, token });
+      return { emailSent: true, token, resetUrl };
+    }
+
+    return { emailSent: false, token, resetUrl };
+  }
+
+  async resetPassword(token, newPassword, context = {}) {
+    const tokenHash = hashToken(token);
+    const storedToken = await RefreshToken.findOne({ tokenHash, type: 'password_reset' });
+    if (!storedToken || !storedToken.isActive()) {
+      const error = new Error('Invalid or expired reset token');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await User.findById(storedToken.user);
+    if (!user) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const passwordHash = await User.hashPassword(newPassword);
+    user.passwordHash = passwordHash;
+    await user.save();
+
+    await RefreshToken.updateMany(
+      { user: user._id, type: 'refresh' },
+      { $set: { revokedAt: new Date(), revokedByIp: context.ip } }
+    );
+
+    storedToken.consumedAt = new Date();
+    storedToken.revokedByIp = context.ip;
+    await storedToken.save();
+
+    return user;
   }
 }
 

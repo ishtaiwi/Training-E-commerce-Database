@@ -51,19 +51,66 @@ const options = {
             message: { type: 'string', example: 'Refresh token is stored in HTTP-only cookie.' }
           }
         },
+        UserSummary: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: '690b1a43fa9b950d23ecbf74' },
+            name: { type: 'string', example: 'Osama' },
+            email: { type: 'string', example: 'osama@test.com' },
+            role: { type: 'string', example: 'Viewer' },
+            emailVerified: { type: 'boolean', example: true }
+          }
+        },
         AuthResponse: {
           type: 'object',
           properties: {
-            user: {
+            user: { $ref: '#/components/schemas/UserSummary' },
+            accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }
+          }
+        },
+        RegisterResponse: {
+          type: 'object',
+          properties: {
+            user: { $ref: '#/components/schemas/UserSummary' },
+            verification: {
               type: 'object',
               properties: {
-                id: { type: 'string', example: '690b1a43fa9b950d23ecbf74' },
-                name: { type: 'string', example: 'Osama' },
-                email: { type: 'string', example: 'osama@test.com' },
-                role: { type: 'string', example: 'Viewer' }
+                emailSent: { type: 'boolean', example: true },
+                token: { type: 'string', example: '1c6c8a4f4c0f4f609cca...' },
+                verifyUrl: { type: 'string', example: 'http://localhost:5173/verify-email?token=...' },
+                alreadyVerified: { type: 'boolean', example: false }
               }
             },
-            accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }
+            message: { type: 'string', example: 'Account created. Please verify your email before logging in.' }
+          }
+        },
+        VerifyEmailRequest: {
+          type: 'object',
+          required: ['token'],
+          properties: {
+            token: { type: 'string', example: '1c6c8a4f4c0f4f609cca...' }
+          }
+        },
+        ResendVerificationRequest: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email', example: 'osama@test.com' }
+          }
+        },
+        PasswordResetRequest: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email', example: 'osama@test.com' }
+          }
+        },
+        PerformPasswordResetRequest: {
+          type: 'object',
+          required: ['token', 'password'],
+          properties: {
+            token: { type: 'string', example: '1c6c8a4f4c0f4f609cca...' },
+            password: { type: 'string', minLength: 6, example: 'NewPassword@123' }
           }
         },
         Product: {
@@ -233,7 +280,7 @@ const options = {
         post: {
           tags: ['Auth'],
           summary: 'Register a new user',
-          description: 'Create a new user account. Returns an access token in the response body and sets the refresh token in an HTTP-only cookie.',
+          description: 'Create a new user account and send an email verification token. JWT tokens are only issued after the email is verified and the user logs in.',
           requestBody: {
             required: true,
             content: {
@@ -244,16 +291,10 @@ const options = {
           },
           responses: {
             '201': {
-              description: 'User created successfully',
+              description: 'User created successfully. Awaiting email verification.',
               content: {
                 'application/json': {
-                  schema: { $ref: '#/components/schemas/AuthResponse' }
-                }
-              },
-              headers: {
-                'Set-Cookie': {
-                  description: 'Contains the HTTP-only `refreshToken` cookie used for rotation.',
-                  schema: { type: 'string' }
+                  schema: { $ref: '#/components/schemas/RegisterResponse' }
                 }
               }
             },
@@ -331,6 +372,131 @@ const options = {
           description: 'Revokes the current refresh token and clears the HTTP-only cookie.',
           responses: {
             '204': { description: 'Logged out successfully. Refresh cookie cleared.' }
+          }
+        }
+      },
+      '/auth/verify-email': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Verify email address',
+          description: 'Verify a user email using a token sent by email.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/VerifyEmailRequest' }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Email verified successfully',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      message: { type: 'string' },
+                      user: { $ref: '#/components/schemas/UserSummary' }
+                    }
+                  }
+                }
+              }
+            },
+            '400': { description: 'Invalid token', schema: { $ref: '#/components/schemas/Error' } }
+          }
+        }
+      },
+      '/auth/resend-verification': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Resend verification email',
+          description: 'Send a new verification email to the user.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ResendVerificationRequest' }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Verification email request acknowledged',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      message: { type: 'string' },
+                      emailSent: { type: 'boolean' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/auth/request-password-reset': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Request password reset email',
+          description: 'Initiate a password reset flow by sending an email with a reset link.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PasswordResetRequest' }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Password reset request acknowledged',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      message: { type: 'string' },
+                      emailSent: { type: 'boolean' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/auth/reset-password': {
+        post: {
+          tags: ['Auth'],
+          summary: 'Reset password with token',
+          description: 'Complete the password reset flow by providing the reset token and a new password.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/PerformPasswordResetRequest' }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Password reset successfully',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      message: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            },
+            '400': { description: 'Invalid token or password', schema: { $ref: '#/components/schemas/Error' } }
           }
         }
       },

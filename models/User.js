@@ -8,7 +8,9 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['Admin', 'Editor', 'Viewer'], default: 'Viewer', index: true },
   createdAt: { type: Date, default: Date.now },
   provider: { type: String, enum: ['local', 'google'], default: 'local' },
-  providerId: { type: String }
+  providerId: { type: String },
+  emailVerified: { type: Boolean, default: false },
+  verifiedAt: { type: Date }
 });
 
 userSchema.methods.validatePassword = function (password) {

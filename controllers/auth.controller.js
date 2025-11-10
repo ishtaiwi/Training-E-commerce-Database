@@ -38,11 +38,17 @@ function clearRefreshTokenCookie(res) {
 exports.register = async (req, res, next) => {
   try {
     const context = buildContext(req);
-    const { user, tokens } = await authService.register(req.body, context);
-    setRefreshTokenCookie(res, tokens.refreshToken);
+    const { user, verification } = await authService.register(req.body, context);
     res.status(201).json({
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
-      accessToken: tokens.accessToken
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified
+      },
+      verification,
+      message: 'Account created. Please verify your email before logging in.'
     });
   } catch (err) {
     if (err.message === 'Email already registered') {
@@ -59,12 +65,15 @@ exports.login = async (req, res, next) => {
     const { user, tokens } = await authService.login(email, password, context);
     setRefreshTokenCookie(res, tokens.refreshToken);
     res.json({
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, emailVerified: user.emailVerified },
       accessToken: tokens.accessToken
     });
   } catch (err) {
     if (err.message === 'Invalid credentials') {
       return res.status(401).json({ message: err.message });
+    }
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
     }
     next(err);
   }
@@ -110,7 +119,8 @@ exports.googleCallback = async (req, res, next) => {
         id: req.user._id,
         name: req.user.name,
         email: req.user.email,
-        role: req.user.role
+        role: req.user.role,
+        emailVerified: req.user.emailVerified
       },
       accessToken: tokens.accessToken
     });
@@ -121,4 +131,72 @@ exports.googleCallback = async (req, res, next) => {
 
 exports.googleFailure = (req, res) => {
   res.status(401).json({ message: 'Google authentication failed' });
+};
+
+exports.requestPasswordReset = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const context = buildContext(req);
+    const result = await authService.requestPasswordReset(email, context);
+    res.json({
+      message: 'If that email exists, you will receive a password reset link shortly.',
+      emailSent: result.emailSent,
+      ...(result.token ? { token: result.token, resetUrl: result.resetUrl } : {})
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const { token, password } = req.body;
+    const context = buildContext(req);
+    await authService.resetPassword(token, password, context);
+    res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
+    next(err);
+  }
+};
+
+exports.verifyEmail = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    const context = buildContext(req);
+    const user = await authService.verifyEmailToken(token, context);
+    res.json({
+      message: 'Email verified successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified
+      }
+    });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
+    next(err);
+  }
+};
+
+exports.resendVerification = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const context = buildContext(req);
+    const result = await authService.resendVerificationEmail(email, context);
+    res.json({
+      message: 'If that email exists, a verification link has been sent.',
+      emailSent: result.emailSent,
+      ...(result.token ? { token: result.token, verifyUrl: result.verifyUrl } : {}),
+      alreadyVerified: result.alreadyVerified || false
+    });
+  } catch (err) {
+    next(err);
+  }
 };

@@ -1,7 +1,18 @@
 const router = require('express').Router();
 const Joi = require('joi');
 const passport = require('passport');
-const { register, login, refresh, logout, googleCallback, googleFailure } = require('../controllers/auth.controller');
+const {
+  register,
+  login,
+  refresh,
+  logout,
+  googleCallback,
+  googleFailure,
+  requestPasswordReset,
+  resetPassword,
+  verifyEmail,
+  resendVerification
+} = require('../controllers/auth.controller');
 
 const registerSchema = Joi.object({
   name: Joi.string().min(2).required(),
@@ -12,6 +23,19 @@ const registerSchema = Joi.object({
 
 const loginSchema = Joi.object({
   email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const emailOnlySchema = Joi.object({
+  email: Joi.string().email().required()
+});
+
+const tokenSchema = Joi.object({
+  token: Joi.string().required()
+});
+
+const resetPasswordSchema = Joi.object({
+  token: Joi.string().required(),
   password: Joi.string().min(6).required()
 });
 
@@ -30,6 +54,30 @@ router.post('/login', (req, res, next) => {
 router.post('/refresh', refresh);
 
 router.post('/logout', logout);
+
+router.post('/verify-email', (req, res, next) => {
+  const { error } = tokenSchema.validate(req.body);
+  if (error) return res.status(400).json({ message: error.message });
+  return verifyEmail(req, res, next);
+});
+
+router.post('/resend-verification', (req, res, next) => {
+  const { error } = emailOnlySchema.validate(req.body);
+  if (error) return res.status(400).json({ message: error.message });
+  return resendVerification(req, res, next);
+});
+
+router.post('/request-password-reset', (req, res, next) => {
+  const { error } = emailOnlySchema.validate(req.body);
+  if (error) return res.status(400).json({ message: error.message });
+  return requestPasswordReset(req, res, next);
+});
+
+router.post('/reset-password', (req, res, next) => {
+  const { error } = resetPasswordSchema.validate(req.body);
+  if (error) return res.status(400).json({ message: error.message });
+  return resetPassword(req, res, next);
+});
 
 router.get('/google', passport.authenticate('google', {
   scope: ['profile', 'email'],
