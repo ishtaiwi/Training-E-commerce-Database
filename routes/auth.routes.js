@@ -8,7 +8,6 @@ const {
   refresh,
   logout,
   googleCallback,
-  googleFailure,
   requestPasswordReset,
   resetPassword,
   verifyEmail,
@@ -108,14 +107,18 @@ router.get('/google', passport.authenticate('google', {
 
 router.get('/google/callback', (req, res, next) => {
   passport.authenticate('google', { session: false }, (err, user) => {
-    if (err) return next(err);
-    if (!user) return googleFailure(req, res);
+    if (err) {
+      // Handle authentication errors
+      return res.status(401).json({ message: 'Google authentication failed', error: err.message });
+    }
+    if (!user) {
+      // Handle case where user is not returned (e.g., user denied permissions)
+      return res.status(401).json({ message: 'Google authentication failed' });
+    }
     req.user = user;
     return googleCallback(req, res, next);
   })(req, res, next);
 });
-
-router.get('/google/failure', googleFailure);
 
 module.exports = router;
 

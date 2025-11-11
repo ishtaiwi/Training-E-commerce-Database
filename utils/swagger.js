@@ -506,10 +506,10 @@ const options = {
         get: {
           tags: ['Auth'],
           summary: 'Start Google OAuth flow',
-          description: 'Redirects the user to Google for OAuth 2.0 authentication.',
+          description: 'Redirects the user to Google for OAuth 2.0 authentication. After user logs in and approves, Google automatically redirects to the callback URL (not documented in Swagger as it is an internal endpoint). The callback endpoint issues JWT tokens and returns them to the client.',
           responses: {
             '302': {
-              description: 'Redirect to Google OAuth consent screen',
+              description: 'Redirect to Google OAuth consent screen. After authentication, Google redirects to the callback URL which returns JWT tokens.',
               headers: {
                 Location: {
                   description: 'Google OAuth consent URL',
@@ -517,40 +517,6 @@ const options = {
                 }
               }
             }
-          }
-        }
-      },
-      '/auth/google/callback': {
-        get: {
-          tags: ['Auth'],
-          summary: 'Handle Google OAuth callback',
-          description: 'Completes Google OAuth login, issues an access token in the body, and sets the refresh token in an HTTP-only cookie.',
-          responses: {
-            '200': {
-              description: 'Google login successful',
-              content: {
-                'application/json': {
-                  schema: { $ref: '#/components/schemas/AuthResponse' }
-                }
-              },
-              headers: {
-                'Set-Cookie': {
-                  description: 'Contains the HTTP-only `refreshToken` cookie used for rotation.',
-                  schema: { type: 'string' }
-                }
-              }
-            },
-            '401': { description: 'Google authentication failed', schema: { $ref: '#/components/schemas/Error' } }
-          }
-        }
-      },
-      '/auth/google/failure': {
-        get: {
-          tags: ['Auth'],
-          summary: 'Google OAuth failure',
-          description: 'Returns an error response when Google authentication fails.',
-          responses: {
-            '401': { description: 'Google authentication failed', schema: { $ref: '#/components/schemas/Error' } }
           }
         }
       },

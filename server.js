@@ -75,6 +75,9 @@ app.use('/api-docs', require('./utils/swagger'));
 // Health
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// Favicon handler (browsers automatically request this)
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 // Error handler
 const { notFound, errorHandler } = require('./middlewares/error.middleware');
 app.use(notFound);
