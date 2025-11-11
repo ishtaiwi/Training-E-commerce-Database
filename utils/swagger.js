@@ -307,7 +307,7 @@ const options = {
         post: {
           tags: ['Auth'],
           summary: 'Login and get JWT tokens',
-          description: 'Authenticate user and receive an access token in the body. Refresh token is issued in an HTTP-only cookie.',
+          description: 'Authenticate user and receive an access token in the body. Refresh token is issued in an HTTP-only cookie. This endpoint is rate limited (e.g., 10 requests / 15 minutes per IP).',
           requestBody: {
             required: true,
             content: {
@@ -442,7 +442,7 @@ const options = {
         post: {
           tags: ['Auth'],
           summary: 'Request password reset email',
-          description: 'Initiate a password reset flow by sending an email with a reset link.',
+          description: 'Initiate a password reset flow by sending an email with a reset link. This endpoint is rate limited (e.g., 5 requests / 15 minutes per IP) and returns a generic response regardless of whether the email exists to prevent user enumeration.',
           requestBody: {
             required: true,
             content: {
@@ -460,7 +460,9 @@ const options = {
                     type: 'object',
                     properties: {
                       message: { type: 'string' },
-                      emailSent: { type: 'boolean' }
+                      emailSent: { type: 'boolean' },
+                      token: { type: 'string', nullable: true, description: 'Optional helper for local/dev when email is disabled' },
+                      resetUrl: { type: 'string', nullable: true, description: 'Optional helper for local/dev when email is disabled' }
                     }
                   }
                 }
@@ -473,7 +475,7 @@ const options = {
         post: {
           tags: ['Auth'],
           summary: 'Reset password with token',
-          description: 'Complete the password reset flow by providing the reset token and a new password.',
+          description: 'Complete the password reset flow by providing the reset token and a new password. This endpoint is rate limited (e.g., 10 requests / 15 minutes per IP). On success, all active sessions for the user are invalidated.',
           requestBody: {
             required: true,
             content: {

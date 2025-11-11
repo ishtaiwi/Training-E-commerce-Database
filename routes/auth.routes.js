@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const Joi = require('joi');
 const passport = require('passport');
 const {
@@ -39,13 +40,34 @@ const resetPasswordSchema = Joi.object({
   password: Joi.string().min(6).required()
 });
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const resetRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const resetConfirmLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 router.post('/register', (req, res, next) => {
   const { error } = registerSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.message });
   return register(req, res, next);
 });
 
-router.post('/login', (req, res, next) => {
+router.post('/login', loginLimiter, (req, res, next) => {
   const { error } = loginSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.message });
   return login(req, res, next);
@@ -67,13 +89,13 @@ router.post('/resend-verification', (req, res, next) => {
   return resendVerification(req, res, next);
 });
 
-router.post('/request-password-reset', (req, res, next) => {
+router.post('/request-password-reset', resetRequestLimiter, (req, res, next) => {
   const { error } = emailOnlySchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.message });
   return requestPasswordReset(req, res, next);
 });
 
-router.post('/reset-password', (req, res, next) => {
+router.post('/reset-password', resetConfirmLimiter, (req, res, next) => {
   const { error } = resetPasswordSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.message });
   return resetPassword(req, res, next);

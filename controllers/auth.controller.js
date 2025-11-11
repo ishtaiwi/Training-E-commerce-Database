@@ -193,8 +193,7 @@ exports.resendVerification = async (req, res, next) => {
     res.json({
       message: 'If that email exists, a verification link has been sent.',
       emailSent: result.emailSent,
-      ...(result.token ? { token: result.token, verifyUrl: result.verifyUrl } : {}),
-      alreadyVerified: result.alreadyVerified || false
+      ...(result.token ? { token: result.token, verifyUrl: result.verifyUrl } : {})
     });
   } catch (err) {
     next(err);
