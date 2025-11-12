@@ -108,11 +108,6 @@ exports.logout = async (req, res, next) => {
 
 exports.googleCallback = async (req, res, next) => {
   try {
-    // This check is redundant since we handle it in the route,
-    // but kept for extra safety
-    if (!req.user) {
-      return res.status(401).json({ message: 'Google authentication failed' });
-    }
     const context = buildContext(req);
     const tokens = await authService.issueTokens(req.user, context);
     setRefreshTokenCookie(res, tokens.refreshToken);

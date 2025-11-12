@@ -212,6 +212,12 @@ class AuthService {
         user.providerId = googleId;
         requiresSave = true;
       }
+      // Google OAuth users should have emailVerified = true
+      if (!user.emailVerified) {
+        user.emailVerified = true;
+        user.verifiedAt = new Date();
+        requiresSave = true;
+      }
       if (requiresSave) {
         await user.save();
       }
@@ -228,19 +234,10 @@ class AuthService {
       passwordHash,
       role: 'Viewer',
       provider: 'google',
-      providerId: googleId
+      providerId: googleId,
+      emailVerified: true,
+      verifiedAt: new Date()
     });
-  }
-
-  async loginWithGoogle(profile, context = {}) {
-    const user = await this.findOrCreateGoogleUser(profile);
-    if (!user.emailVerified) {
-      user.emailVerified = true;
-      user.verifiedAt = new Date();
-      await user.save();
-    }
-    const tokens = await this.issueTokens(user, context);
-    return { user, tokens };
   }
 
   async createActionToken(user, type, ttlMinutes, context = {}, metadata = {}) {

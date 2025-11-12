@@ -58,19 +58,26 @@ class CartService {
   }
 
   async removeItem(userId, productId) {
-    return await Cart.findOneAndUpdate(
+    const cart = await Cart.findOneAndUpdate(
       { user: userId },
       { $pull: { items: { product: productId } }, $set: { updatedAt: new Date() } },
       { new: true }
     );
+    if (!cart) {
+      const error = new Error('Cart not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    return await Cart.findById(cart._id).populate('items.product');
   }
 
   async clearCart(userId) {
-    return await Cart.findOneAndUpdate(
+    const cart = await Cart.findOneAndUpdate(
       { user: userId },
       { $set: { items: [], updatedAt: new Date() } },
       { new: true, upsert: true }
     );
+    return await Cart.findById(cart._id).populate('items.product');
   }
 }
 

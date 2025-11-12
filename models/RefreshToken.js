@@ -16,6 +16,9 @@ const refreshTokenSchema = new mongoose.Schema({
 });
 
 refreshTokenSchema.methods.isExpired = function () {
+  if (!this.expiresAt) {
+    return true; // Consider expired if no expiry date
+  }
   return Date.now() >= this.expiresAt.getTime();
 };
 
