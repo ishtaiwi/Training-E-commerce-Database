@@ -960,9 +960,20 @@ const options = {
 };
 
 const specs = swaggerJsdoc(options);
+
+// Export Swagger JSON endpoint (useful for sharing)
+router.get('/json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(specs);
+});
+
+// Swagger UI
 router.use('/', swaggerUi.serve, swaggerUi.setup(specs, {
   customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'E-commerce API Documentation'
+  customSiteTitle: 'E-commerce API Documentation',
+  swaggerOptions: {
+    persistAuthorization: true, // Keep authorization after page refresh
+  }
 }));
 
 module.exports = router;

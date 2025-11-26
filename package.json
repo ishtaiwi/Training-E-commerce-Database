@@ -7,7 +7,12 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "seed": "node utils/seed.js"
+    "seed": "node utils/seed.js",
+    "share": "node scripts/start-ngrok.js",
+    "share:ngrok": "node scripts/start-ngrok.js",
+    "share:info": "node scripts/share-swagger.js",
+    "share:url": "node scripts/get-share-url.js",
+    "get:url": "node scripts/start-and-get-url.js"
   },
   "dependencies": {
     "@faker-js/faker": "^9.0.0",

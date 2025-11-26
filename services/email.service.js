@@ -48,10 +48,33 @@ class EmailService {
       return;
     }
     try {
-      await this.transporter.sendMail({
-        from: process.env.SMTP_FROM_EMAIL,
-        ...options
-      });
+      // Ensure 'to' field is present and valid
+      if (!options.to) {
+        logger.error('Email recipient (to) is required', { subject: options.subject });
+        throw new Error('Email recipient (to) is required');
+      }
+      
+      // For Gmail SMTP, if FROM address doesn't match authenticated user, Gmail may:
+      // 1. Reject the email, or
+      // 2. Send copies to the authenticated account (osamaishtaiwi3@gmail.com)
+      // To prevent this, use the authenticated account as FROM, or configure Gmail "Send mail as"
+      const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+      
+      const mailOptions = {
+        from: fromEmail,
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+        text: options.text,
+        // Only add BCC if explicitly provided
+        ...(options.bcc ? { bcc: options.bcc } : {})
+      };
+      
+      // Prevent sending copy to admin unless explicitly requested
+      // Gmail auto-BCC behavior: if FROM doesn't match SMTP_USER, it may send copies
+      // Solution: Set SMTP_FROM_EMAIL to match SMTP_USER to prevent auto-BCC
+      
+      await this.transporter.sendMail(mailOptions);
     } catch (err) {
       logger.error('Failed to send email', { err, to: options.to, subject: options.subject });
       throw err;
