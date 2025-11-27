@@ -76,8 +76,8 @@ class EmailService {
       
       await this.transporter.sendMail(mailOptions);
     } catch (err) {
-      logger.error('Failed to send email', { err, to: options.to, subject: options.subject });
-      throw err;
+      // Log the error but do NOT throw, so background jobs (queue worker) don't fail hard
+      logger.error('Failed to send email', { message: err.message, stack: err.stack, to: options.to, subject: options.subject });
     }
   }
 
@@ -101,6 +101,26 @@ class EmailService {
       ${resetUrl ? `<p><a href="${resetUrl}">${resetUrl}</a></p>` : ''}
       ${!resetUrl && token ? `<p>Your reset token is:</p><p><code>${token}</code></p>` : ''}
       <p>If you did not request a password reset, you can safely ignore this email.</p>
+    `;
+    await this.sendMail({ to, subject, html });
+  }
+
+  async sendOrderReceipt(to, { order, user }) {
+    const subject = `Your order ${order._id} confirmation`;
+    const itemLines = (order.items || []).map(item => {
+      const name = item.product && item.product.name ? item.product.name : 'Item';
+      const price = Number(item.priceAtPurchase || 0).toFixed(2);
+      return `<li>${name} &times; ${item.quantity} - $${price}</li>`;
+    }).join('');
+    const total = Number(order.total || 0).toFixed(2);
+    const html = `
+      <p>Hi ${user.name || ''},</p>
+      <p>Thanks for your order. Here is a quick summary:</p>
+      <ul>
+        ${itemLines}
+      </ul>
+      <p><strong>Total:</strong> $${total}</p>
+      <p>We will notify you once your items ship.</p>
     `;
     await this.sendMail({ to, subject, html });
   }

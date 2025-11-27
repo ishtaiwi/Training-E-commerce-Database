@@ -1,5 +1,7 @@
 const orderService = require('../services/order.service');
 const auditService = require('../services/audit.service');
+const queueService = require('../services/queue.service');
+const { logger } = require('../utils/logger');
 
 function buildAuditContext(req) {
   return {
@@ -27,6 +29,14 @@ exports.createOrderFromCart = async (req, res, next) => {
         total: order.total,
         itemsCount: order.items ? order.items.length : 0
       }
+    });
+
+    queueService.enqueueTask('ORDER_CONFIRMATION', {
+      orderId: order.id,
+      userId: req.user.sub
+    }).catch(err => {
+      // Do not block the response if enqueue fails
+      logger.error('Failed to enqueue ORDER_CONFIRMATION task', { err });
     });
 
     res.status(201).json(order);
